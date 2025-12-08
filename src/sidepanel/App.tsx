@@ -24,6 +24,7 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
+    DialogFooter,
 } from "@/components/ui/dialog";
 import {
     ChevronDown,
@@ -62,6 +63,11 @@ function App() {
     const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
     const [progress, setProgress] = useState<FetchInteractionsProgress | null>(null);
     const { toast } = useToast();
+
+    // Confirmation modal states
+    const [showNotionConfirm, setShowNotionConfirm] = useState(false);
+    const [showExportConfirm, setShowExportConfirm] = useState(false);
+    const [profileToIgnore, setProfileToIgnore] = useState<CommentAuthor | null>(null);
 
     useEffect(() => {
         fetchProfiles();
@@ -232,7 +238,22 @@ function App() {
         }));
     };
 
-    const handleIgnoreProfile = async (profileId: string) => {
+    /**
+     * Opens confirmation modal for ignoring a profile
+     */
+    const handleIgnoreProfileClick = (author: CommentAuthor) => {
+        setProfileToIgnore(author);
+    };
+
+    /**
+     * Confirms and ignores the selected profile
+     */
+    const confirmIgnoreProfile = async () => {
+        if (!profileToIgnore) return;
+
+        const profileId = profileToIgnore.id;
+        setProfileToIgnore(null);
+
         try {
             const response = await fetch(`${API_URL}/ignore-profile`, {
                 method: "POST",
@@ -265,7 +286,10 @@ function App() {
         }
     };
 
-    const handleSendToNotion = async () => {
+    /**
+     * Opens confirmation modal for sending profiles to Notion
+     */
+    const handleSendToNotionClick = () => {
         const selectedAuthors = authors.filter(
             (a) => selections[a.id]?.selected
         );
@@ -279,6 +303,18 @@ function App() {
             return;
         }
 
+        setShowNotionConfirm(true);
+    };
+
+    /**
+     * Confirms and sends selected profiles to Notion
+     */
+    const confirmSendToNotion = async () => {
+        const selectedAuthors = authors.filter(
+            (a) => selections[a.id]?.selected
+        );
+
+        setShowNotionConfirm(false);
         setIsLoading(true);
         try {
             const payload = {
@@ -329,7 +365,10 @@ function App() {
         }
     };
 
-    const handleExportCSV = async () => {
+    /**
+     * Opens confirmation modal for exporting profiles to CSV
+     */
+    const handleExportCSVClick = () => {
         if (authors.length === 0) {
             toast({
                 title: "No authors to export",
@@ -338,6 +377,15 @@ function App() {
             });
             return;
         }
+
+        setShowExportConfirm(true);
+    };
+
+    /**
+     * Confirms and exports profiles to CSV
+     */
+    const confirmExportCSV = async () => {
+        setShowExportConfirm(false);
 
         try {
             // Create CSV content
@@ -508,6 +556,78 @@ function App() {
                 </DialogContent>
             </Dialog>
 
+            {/* Confirmation modal for Send to Notion */}
+            <Dialog open={showNotionConfirm} onOpenChange={setShowNotionConfirm}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Confirm Send to Notion</DialogTitle>
+                        <DialogDescription>
+                            You are about to send{" "}
+                            <span className="font-semibold text-foreground">
+                                {Object.values(selections).filter((s) => s.selected).length}
+                            </span>{" "}
+                            profile{Object.values(selections).filter((s) => s.selected).length > 1 ? "s" : ""} to Notion.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowNotionConfirm(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={confirmSendToNotion}>
+                            Confirm
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Confirmation modal for Export CSV */}
+            <Dialog open={showExportConfirm} onOpenChange={setShowExportConfirm}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Confirm CSV Export</DialogTitle>
+                        <DialogDescription>
+                            You are about to export{" "}
+                            <span className="font-semibold text-foreground">
+                                {authors.length}
+                            </span>{" "}
+                            profile{authors.length > 1 ? "s" : ""} to CSV.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowExportConfirm(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={confirmExportCSV}>
+                            Export
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Confirmation modal for Ignore Profile */}
+            <Dialog open={!!profileToIgnore} onOpenChange={(open) => !open && setProfileToIgnore(null)}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Ignore Profile</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to ignore{" "}
+                            <span className="font-semibold text-foreground">
+                                {profileToIgnore?.name}
+                            </span>
+                            ? This profile will be removed from the list.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setProfileToIgnore(null)}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={confirmIgnoreProfile}>
+                            Ignore
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="flex flex-col gap-4 mb-4">
                 <div className="flex justify-between items-center">
                     <h1 className="text-xl font-bold">LinkedIn Comments</h1>
@@ -531,6 +651,18 @@ function App() {
                     </div>
                 )}
             </div>
+
+            {/* Profile count display */}
+            {authors.length > 0 && (
+                <div className="flex items-center justify-between mb-2 text-sm text-muted-foreground">
+                    <span>
+                        {authors.length} profile{authors.length > 1 ? "s" : ""} found
+                    </span>
+                    <span>
+                        {Object.values(selections).filter((s) => s.selected).length} selected
+                    </span>
+                </div>
+            )}
 
             <div className="flex-1 overflow-auto border rounded-md mb-4">
                 <Table>
@@ -563,11 +695,8 @@ function App() {
                                 return (
                                     <Fragment key={author.id}>
                                         <TableRow
-                                            className={
-                                                hasDetails
-                                                    ? "cursor-pointer"
-                                                    : ""
-                                            }
+                                            className="cursor-pointer hover:bg-muted/50"
+                                            onClick={() => toggleSelection(author.id)}
                                         >
                                             <TableCell className="px-2">
                                                 {hasDetails && (
@@ -673,9 +802,7 @@ function App() {
                                                     className="h-8 w-8 text-muted-foreground hover:text-destructive"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleIgnoreProfile(
-                                                            author.id
-                                                        );
+                                                        handleIgnoreProfileClick(author);
                                                     }}
                                                 >
                                                     <X className="h-4 w-4" />
@@ -711,14 +838,14 @@ function App() {
             <div className="sticky bottom-0 bg-background pt-2 border-t flex gap-2">
                 <Button
                     className="flex-1"
-                    onClick={handleSendToNotion}
+                    onClick={handleSendToNotionClick}
                     disabled={isLoading}
                 >
                     Send to Notion
                 </Button>
                 <Button
                     variant="outline"
-                    onClick={handleExportCSV}
+                    onClick={handleExportCSVClick}
                     disabled={isLoading || authors.length === 0}
                 >
                     <Download className="h-4 w-4 mr-2" />
