@@ -25,14 +25,22 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronDown, ChevronRight, Link as LinkIcon, X } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronRight,
+    Link as LinkIcon,
+    X,
+    Download,
+} from "lucide-react";
 import type {
     CommentAuthor,
     FlattenedProfile,
     PostInfo,
     FetchInteractionsResponse,
+    FetchInteractionsProgress,
 } from "../shared/types";
 import { LinkedInProfileCollapse } from "./components/LinkedInProfileCollapse";
+import { Badge } from "@/components/ui/badge";
 
 type UserType = "Prospect" | "Consultant transfo";
 
@@ -52,6 +60,7 @@ function App() {
         {}
     );
     const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+    const [progress, setProgress] = useState<FetchInteractionsProgress | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -60,6 +69,7 @@ function App() {
 
     const fetchProfiles = async () => {
         setIsLoading(true);
+        setProgress(null);
         try {
             const [tab] = await chrome.tabs.query({
                 active: true,
@@ -89,38 +99,104 @@ function App() {
                 throw new Error(`API error: ${response.status}`);
             }
 
-            const data: FetchInteractionsResponse = await response.json();
+            // Handle SSE stream
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error("No response body");
+            }
 
-            // Map API response to CommentAuthor
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const mappedAuthors: CommentAuthor[] = data.profiles.map(
-                (item: any) => ({
-                    id: item.id,
-                    name: item.name,
-                    profileUrl: item.profileUrl,
-                    headline: item.title,
-                    scrapedData: item.scrapedData, // Pass the scraped data
-                })
-            );
+            const decoder = new TextDecoder();
+            let buffer = "";
+            // Persist event state across chunks
+            let currentEventType = "";
+            let currentEventData = "";
 
-            setAuthors(mappedAuthors);
-            setPost(data.post);
+            /**
+             * Process a complete SSE event
+             */
+            const processEvent = (eventType: string, eventData: string) => {
+                try {
+                    const parsed = JSON.parse(eventData);
 
-            // Initialize selections
-            setSelections((prev) => {
-                const next = { ...prev };
-                mappedAuthors.forEach((author) => {
-                    if (!next[author.id]) {
-                        next[author.id] = { selected: false, type: "Prospect" };
+                    // Check for result: either by event type or by data structure (fallback)
+                    const isResult = eventType === "result" || 
+                        (Array.isArray(parsed.profiles) && parsed.post);
+
+                    if (isResult) {
+                        const data: FetchInteractionsResponse = parsed;
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const mappedAuthors: CommentAuthor[] = data.profiles.map(
+                            (item: any) => ({
+                                id: item.id,
+                                name: item.name,
+                                profileUrl: item.profileUrl,
+                                headline: item.title,
+                                sentToNotion: item.sentToNotion,
+                                scrapedData: item.scrapedData,
+                            })
+                        );
+
+                        setAuthors(mappedAuthors);
+                        setPost(data.post);
+
+                        setSelections((prev) => {
+                            const next = { ...prev };
+                            mappedAuthors.forEach((author) => {
+                                if (!next[author.id]) {
+                                    next[author.id] = { selected: false, type: "Prospect" };
+                                }
+                            });
+                            return next;
+                        });
+
+                        toast({
+                            title: "Success",
+                            description: `Fetched ${mappedAuthors.length} profiles`,
+                        });
+                    } else if (eventType === "error" || parsed.type === "error") {
+                        throw new Error(parsed.message || "Unknown error");
+                    } else {
+                        // Progress events (fetching, enriching, complete)
+                        setProgress(parsed as FetchInteractionsProgress);
                     }
-                });
-                return next;
-            });
+                } catch (parseError) {
+                    // Re-throw if it's our own error
+                    if (parseError instanceof Error && parseError.message !== "Unknown error") {
+                        throw parseError;
+                    }
+                    console.error("Error parsing SSE event:", parseError);
+                }
+            };
 
-            toast({
-                title: "Success",
-                description: `Fetched ${mappedAuthors.length} profiles`,
-            });
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Parse SSE events from buffer
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith("event:")) {
+                        currentEventType = line.slice(6).trim();
+                    } else if (line.startsWith("data:")) {
+                        currentEventData = line.slice(5).trim();
+                    } else if (line === "" && currentEventData) {
+                        // Empty line signals end of event - process it
+                        processEvent(currentEventType, currentEventData);
+                        // Reset for next event
+                        currentEventType = "";
+                        currentEventData = "";
+                    }
+                }
+            }
+
+            // Process any remaining event in buffer after stream ends
+            if (currentEventData) {
+                processEvent(currentEventType, currentEventData);
+            }
         } catch (error) {
             console.error("Fetch error:", error);
             toast({
@@ -131,6 +207,7 @@ function App() {
             });
         } finally {
             setIsLoading(false);
+            setProgress(null);
         }
     };
 
@@ -252,6 +329,77 @@ function App() {
         }
     };
 
+    const handleExportCSV = async () => {
+        if (authors.length === 0) {
+            toast({
+                title: "No authors to export",
+                description: "There are no profiles to export.",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        try {
+            // Create CSV content
+            const csvHeader = "URL,Name\n";
+            const csvRows = authors
+                .map((author) => `"${author.profileUrl}","${author.name}"`)
+                .join("\n");
+            const csvContent = csvHeader + csvRows;
+
+            // Download CSV file
+            const blob = new Blob([csvContent], {
+                type: "text/csv;charset=utf-8;",
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute(
+                "download",
+                `linkedin-profiles-${Date.now()}.csv`
+            );
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            // Call the /export endpoint
+            const response = await fetch(`${API_URL}/export`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${AUTH_TOKEN}`,
+                },
+                body: JSON.stringify({
+                    authors: authors.map((a) => a.id),
+                    postId: post?.id,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+            setAuthors([]);
+            setSelections({} as Record<string, UserSelection>);
+            setOpenRows({});
+            setPost(null);
+
+            toast({
+                title: "CSV Exported",
+                description: `Successfully exported ${authors.length} profiles.`,
+            });
+        } catch (error) {
+            console.error("Export error:", error);
+            toast({
+                title: "Error exporting CSV",
+                description:
+                    error instanceof Error ? error.message : "Unknown error",
+                variant: "destructive",
+            });
+        }
+    };
+
     // Helper to map CommentAuthor + scrapedData to FlattenedProfile for the component
     const getFlattenedProfile = (
         author: CommentAuthor
@@ -319,11 +467,43 @@ function App() {
                     onInteractOutside={(e) => e.preventDefault()}
                 >
                     <DialogHeader>
-                        <DialogTitle>Loading...</DialogTitle>
-                        <DialogDescription>Please wait...</DialogDescription>
+                        <DialogTitle>
+                            {progress?.type === 'fetching' && 'Fetching data...'}
+                            {progress?.type === 'enriching' && 'Enriching profiles...'}
+                            {progress?.type === 'complete' && 'Complete!'}
+                            {!progress && 'Loading...'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {progress?.message || 'Please wait...'}
+                        </DialogDescription>
                     </DialogHeader>
-                    <div className="flex items-center justify-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <div className="flex flex-col items-center gap-4 py-4">
+                        {/* Progress bar for enriching */}
+                        {progress?.type === 'enriching' && progress.total && progress.current !== undefined && (
+                            <div className="w-full space-y-2">
+                                <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                                    <div
+                                        className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                                        style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                                    />
+                                </div>
+                                <p className="text-sm text-muted-foreground text-center">
+                                    {progress.current} / {progress.total} profiles
+                                </p>
+                            </div>
+                        )}
+                        {/* Spinner for fetching phase */}
+                        {(progress?.type === 'fetching' || !progress) && (
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        )}
+                        {/* Success icon for complete */}
+                        {progress?.type === 'complete' && (
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-green-500/20 text-green-500">
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>
@@ -428,17 +608,27 @@ function App() {
                                             </TableCell>
                                             <TableCell className="font-medium">
                                                 <div className="flex flex-col">
-                                                    <a
-                                                        href={author.profileUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="hover:underline text-primary w-fit"
-                                                        onClick={(e) =>
-                                                            e.stopPropagation()
-                                                        }
-                                                    >
-                                                        {author.name}
-                                                    </a>
+                                                    <div className="flex gap-2">
+                                                        <a
+                                                            href={
+                                                                author.profileUrl
+                                                            }
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="hover:underline text-primary w-fit"
+                                                            onClick={(e) =>
+                                                                e.stopPropagation()
+                                                            }
+                                                        >
+                                                            {author.name}
+                                                        </a>
+
+                                                        {author.sentToNotion && (
+                                                            <Badge>
+                                                                Déjà contacté
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                     {author.headline && (
                                                         <span className="text-xs text-muted-foreground">
                                                             {author.headline}
@@ -518,13 +708,21 @@ function App() {
                 </Table>
             </div>
 
-            <div className="sticky bottom-0 bg-background pt-2 border-t">
+            <div className="sticky bottom-0 bg-background pt-2 border-t flex gap-2">
                 <Button
-                    className="w-full"
+                    className="flex-1"
                     onClick={handleSendToNotion}
                     disabled={isLoading}
                 >
                     Send to Notion
+                </Button>
+                <Button
+                    variant="outline"
+                    onClick={handleExportCSV}
+                    disabled={isLoading || authors.length === 0}
+                >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export CSV
                 </Button>
             </div>
             <Toaster />

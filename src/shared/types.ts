@@ -95,6 +95,7 @@ export interface CommentAuthor {
   name: string;
   profileUrl: string;
   headline?: string;
+  sentToNotion: boolean;
   scrapedData?: LinkedInProfile | null;
 }
 
@@ -114,3 +115,14 @@ export type Message =
   | { type: 'SCRAPE_REQUEST' }
   | { type: 'SCRAPE_SUCCESS'; data: ScrapedData }
   | { type: 'SCRAPE_ERROR'; error: string };
+
+/**
+ * Progress event from the SSE fetch-interactions endpoint
+ */
+export interface FetchInteractionsProgress {
+    type: 'fetching' | 'enriching' | 'complete' | 'error';
+    current?: number;
+    total?: number;
+    profileName?: string;
+    message?: string;
+}
