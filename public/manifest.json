@@ -16,10 +16,6 @@
     "default_path": "index.html"
   },
   "content_scripts": [
-    {
-      "matches": ["https://www.linkedin.com/posts/*"],
-      "js": ["content.js"]
-    }
   ],
   "background": {
     "service_worker": "background.js",

@@ -61,13 +61,16 @@ function App() {
         {}
     );
     const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
-    const [progress, setProgress] = useState<FetchInteractionsProgress | null>(null);
+    const [progress, setProgress] = useState<FetchInteractionsProgress | null>(
+        null
+    );
     const { toast } = useToast();
 
     // Confirmation modal states
     const [showNotionConfirm, setShowNotionConfirm] = useState(false);
     const [showExportConfirm, setShowExportConfirm] = useState(false);
-    const [profileToIgnore, setProfileToIgnore] = useState<CommentAuthor | null>(null);
+    const [profileToIgnore, setProfileToIgnore] =
+        useState<CommentAuthor | null>(null);
 
     useEffect(() => {
         fetchProfiles();
@@ -125,22 +128,22 @@ function App() {
                     const parsed = JSON.parse(eventData);
 
                     // Check for result: either by event type or by data structure (fallback)
-                    const isResult = eventType === "result" || 
+                    const isResult =
+                        eventType === "result" ||
                         (Array.isArray(parsed.profiles) && parsed.post);
 
                     if (isResult) {
                         const data: FetchInteractionsResponse = parsed;
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const mappedAuthors: CommentAuthor[] = data.profiles.map(
-                            (item: any) => ({
+                        const mappedAuthors: CommentAuthor[] =
+                            data.profiles.map((item: any) => ({
                                 id: item.id,
                                 name: item.name,
                                 profileUrl: item.profileUrl,
                                 headline: item.title,
                                 sentToNotion: item.sentToNotion,
                                 scrapedData: item.scrapedData,
-                            })
-                        );
+                            }));
 
                         setAuthors(mappedAuthors);
                         setPost(data.post);
@@ -149,7 +152,10 @@ function App() {
                             const next = { ...prev };
                             mappedAuthors.forEach((author) => {
                                 if (!next[author.id]) {
-                                    next[author.id] = { selected: false, type: "Prospect" };
+                                    next[author.id] = {
+                                        selected: false,
+                                        type: "Prospect",
+                                    };
                                 }
                             });
                             return next;
@@ -159,7 +165,10 @@ function App() {
                             title: "Success",
                             description: `Fetched ${mappedAuthors.length} profiles`,
                         });
-                    } else if (eventType === "error" || parsed.type === "error") {
+                    } else if (
+                        eventType === "error" ||
+                        parsed.type === "error"
+                    ) {
                         throw new Error(parsed.message || "Unknown error");
                     } else {
                         // Progress events (fetching, enriching, complete)
@@ -167,7 +176,10 @@ function App() {
                     }
                 } catch (parseError) {
                     // Re-throw if it's our own error
-                    if (parseError instanceof Error && parseError.message !== "Unknown error") {
+                    if (
+                        parseError instanceof Error &&
+                        parseError.message !== "Unknown error"
+                    ) {
                         throw parseError;
                     }
                     console.error("Error parsing SSE event:", parseError);
@@ -346,7 +358,13 @@ function App() {
             setAuthors((prev) =>
                 prev.filter((a) => !selectedAuthors.includes(a))
             );
-            setSelections({} as Record<string, UserSelection>);
+            setSelections((prev) => {
+                const next = { ...prev };
+                selectedAuthors.forEach((author) => {
+                    delete next[author.id];
+                });
+                return next;
+            });
 
             toast({
                 title: "Sent to Notion",
@@ -516,39 +534,60 @@ function App() {
                 >
                     <DialogHeader>
                         <DialogTitle>
-                            {progress?.type === 'fetching' && 'Fetching data...'}
-                            {progress?.type === 'enriching' && 'Enriching profiles...'}
-                            {progress?.type === 'complete' && 'Complete!'}
-                            {!progress && 'Loading...'}
+                            {progress?.type === "fetching" &&
+                                "Fetching data..."}
+                            {progress?.type === "enriching" &&
+                                "Enriching profiles..."}
+                            {progress?.type === "complete" && "Complete!"}
+                            {!progress && "Loading..."}
                         </DialogTitle>
                         <DialogDescription>
-                            {progress?.message || 'Please wait...'}
+                            {progress?.message || "Please wait..."}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col items-center gap-4 py-4">
                         {/* Progress bar for enriching */}
-                        {progress?.type === 'enriching' && progress.total && progress.current !== undefined && (
-                            <div className="w-full space-y-2">
-                                <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
-                                    <div
-                                        className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
-                                        style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                                    />
+                        {progress?.type === "enriching" &&
+                            progress.total &&
+                            progress.current !== undefined && (
+                                <div className="w-full space-y-2">
+                                    <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                                        <div
+                                            className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                                            style={{
+                                                width: `${
+                                                    (progress.current /
+                                                        progress.total) *
+                                                    100
+                                                }%`,
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="text-sm text-muted-foreground text-center">
+                                        {progress.current} / {progress.total}{" "}
+                                        profiles
+                                    </p>
                                 </div>
-                                <p className="text-sm text-muted-foreground text-center">
-                                    {progress.current} / {progress.total} profiles
-                                </p>
-                            </div>
-                        )}
+                            )}
                         {/* Spinner for fetching phase */}
-                        {(progress?.type === 'fetching' || !progress) && (
+                        {(progress?.type === "fetching" || !progress) && (
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                         )}
                         {/* Success icon for complete */}
-                        {progress?.type === 'complete' && (
+                        {progress?.type === "complete" && (
                             <div className="flex items-center justify-center h-8 w-8 rounded-full bg-green-500/20 text-green-500">
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                <svg
+                                    className="h-5 w-5"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M5 13l4 4L19 7"
+                                    />
                                 </svg>
                             </div>
                         )}
@@ -557,31 +596,47 @@ function App() {
             </Dialog>
 
             {/* Confirmation modal for Send to Notion */}
-            <Dialog open={showNotionConfirm} onOpenChange={setShowNotionConfirm}>
+            <Dialog
+                open={showNotionConfirm}
+                onOpenChange={setShowNotionConfirm}
+            >
                 <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
                         <DialogTitle>Confirm Send to Notion</DialogTitle>
                         <DialogDescription>
                             You are about to send{" "}
                             <span className="font-semibold text-foreground">
-                                {Object.values(selections).filter((s) => s.selected).length}
+                                {
+                                    Object.values(selections).filter(
+                                        (s) => s.selected
+                                    ).length
+                                }
                             </span>{" "}
-                            profile{Object.values(selections).filter((s) => s.selected).length > 1 ? "s" : ""} to Notion.
+                            profile
+                            {Object.values(selections).filter((s) => s.selected)
+                                .length > 1
+                                ? "s"
+                                : ""}{" "}
+                            to Notion.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowNotionConfirm(false)}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowNotionConfirm(false)}
+                        >
                             Cancel
                         </Button>
-                        <Button onClick={confirmSendToNotion}>
-                            Confirm
-                        </Button>
+                        <Button onClick={confirmSendToNotion}>Confirm</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* Confirmation modal for Export CSV */}
-            <Dialog open={showExportConfirm} onOpenChange={setShowExportConfirm}>
+            <Dialog
+                open={showExportConfirm}
+                onOpenChange={setShowExportConfirm}
+            >
                 <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
                         <DialogTitle>Confirm CSV Export</DialogTitle>
@@ -594,18 +649,22 @@ function App() {
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowExportConfirm(false)}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowExportConfirm(false)}
+                        >
                             Cancel
                         </Button>
-                        <Button onClick={confirmExportCSV}>
-                            Export
-                        </Button>
+                        <Button onClick={confirmExportCSV}>Export</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* Confirmation modal for Ignore Profile */}
-            <Dialog open={!!profileToIgnore} onOpenChange={(open) => !open && setProfileToIgnore(null)}>
+            <Dialog
+                open={!!profileToIgnore}
+                onOpenChange={(open) => !open && setProfileToIgnore(null)}
+            >
                 <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
                         <DialogTitle>Ignore Profile</DialogTitle>
@@ -618,10 +677,16 @@ function App() {
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setProfileToIgnore(null)}>
+                        <Button
+                            variant="outline"
+                            onClick={() => setProfileToIgnore(null)}
+                        >
                             Cancel
                         </Button>
-                        <Button variant="destructive" onClick={confirmIgnoreProfile}>
+                        <Button
+                            variant="destructive"
+                            onClick={confirmIgnoreProfile}
+                        >
                             Ignore
                         </Button>
                     </DialogFooter>
@@ -656,10 +721,15 @@ function App() {
             {authors.length > 0 && (
                 <div className="flex items-center justify-between mb-2 text-sm text-muted-foreground">
                     <span>
-                        {authors.length} profile{authors.length > 1 ? "s" : ""} found
+                        {authors.length} profile{authors.length > 1 ? "s" : ""}{" "}
+                        found
                     </span>
                     <span>
-                        {Object.values(selections).filter((s) => s.selected).length} selected
+                        {
+                            Object.values(selections).filter((s) => s.selected)
+                                .length
+                        }{" "}
+                        selected
                     </span>
                 </div>
             )}
@@ -696,7 +766,9 @@ function App() {
                                     <Fragment key={author.id}>
                                         <TableRow
                                             className="cursor-pointer hover:bg-muted/50"
-                                            onClick={() => toggleSelection(author.id)}
+                                            onClick={() =>
+                                                toggleSelection(author.id)
+                                            }
                                         >
                                             <TableCell className="px-2">
                                                 {hasDetails && (
@@ -802,7 +874,9 @@ function App() {
                                                     className="h-8 w-8 text-muted-foreground hover:text-destructive"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleIgnoreProfileClick(author);
+                                                        handleIgnoreProfileClick(
+                                                            author
+                                                        );
                                                     }}
                                                 >
                                                     <X className="h-4 w-4" />
